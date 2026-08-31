@@ -1,0 +1,19 @@
+[project]
+name = "icon"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "customtkinter>=5.2.2",
+    "image>=1.5.33",
+    "matplotlib>=3.10.5",
+    "pywin32>=311",
+    "resvg-py>=0.5.0",
+    "svglib>=2.2.0",
+    "tkinterdnd2>=0.4.3",
+]
+
+[tool.uv]
+# 本项目是脚本型应用，只安装依赖，不构建/安装自身包
+package = false

@@ -1,0 +1,13 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.freebuff/
+# Virtual environments
+.venv
+
+# Cairo native DLLs (downloaded from MSYS2)
+dlls/

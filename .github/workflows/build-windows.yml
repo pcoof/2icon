@@ -38,12 +38,10 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       # 安装项目运行依赖（package=false，仅安装依赖不构建自身）
+      # 注：pywin32 的 COM 注册（pywin32_postinstall -install）在无提权的 CI 运行器上会失败，
+      # 且对 PyInstaller 打包并非必需——相关 DLL 由 PyInstaller 的 pywin32 hook 自动收集。
       - name: Sync dependencies
         run: uv sync --no-dev
-
-      # 确保 pywin32 完成注册（Windows COM / 剪贴板等功能依赖）
-      - name: Finalize pywin32 install
-        run: uv run python -m pywin32_postinstall -install
 
       # 在虚拟环境中安装打包工具 PyInstaller
       - name: Install PyInstaller
@@ -51,7 +49,7 @@ jobs:
 
       # 单文件打包：窗口应用（--windowed 不弹控制台），嵌入 logo.ico 与 tkinterdnd2 数据
       - name: Build single-file EXE with PyInstaller
-        run: uv run pyinstaller --noconfirm --onefile --windowed --name "2icon" --icon "logo.ico" --add-data "logo.ico;." --hidden-import pythoncom --hidden-import win32com --collect-data tkinterdnd2 --collect-data customtkinter main.py
+        run: uv run pyinstaller --noconfirm --onefile --windowed --name "2icon" --icon "logo.ico" --add-data "logo.ico;." --hidden-import pythoncom --hidden-import pywintypes --hidden-import win32com --collect-data tkinterdnd2 --collect-data customtkinter main.py
 
       # 校验产物存在
       - name: Verify artifact

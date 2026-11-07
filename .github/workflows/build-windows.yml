@@ -1,0 +1,76 @@
+name: Build Windows EXE
+
+# 触发条件：
+#   1. 推送代码到主分支（main）
+#   2. 推送版本标签（v*，如 v1.0.0）
+#   3. 发布 Release（published）
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  release:
+    types: [published]
+
+# 编译目标平台：仅 Windows (windows-latest, x64)
+# 单文件打包方式：PyInstaller --onefile --windowed
+# 产物命名规则：
+#   - 生成的单文件可执行程序固定命名为 2icon.exe
+#   - 构建产物（Artifact）命名为 2icon-windows-x64
+#   - 附加到 Release 的资源文件名固定为 2icon.exe
+
+jobs:
+  build-windows:
+    name: Build single-file EXE (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 使用 uv 管理 Python 与依赖，匹配项目技术栈（uv.lock + pyproject.toml）
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      # 安装项目运行依赖（package=false，仅安装依赖不构建自身）
+      - name: Sync dependencies
+        run: uv sync --no-dev
+
+      # 确保 pywin32 完成注册（Windows COM / 剪贴板等功能依赖）
+      - name: Finalize pywin32 install
+        run: uv run python -m pywin32_postinstall -install
+
+      # 在虚拟环境中安装打包工具 PyInstaller
+      - name: Install PyInstaller
+        run: uv pip install pyinstaller
+
+      # 单文件打包：窗口应用（--windowed 不弹控制台），嵌入 logo.ico 与 tkinterdnd2 数据
+      - name: Build single-file EXE with PyInstaller
+        run: uv run pyinstaller --noconfirm --onefile --windowed --name "2icon" --icon "logo.ico" --add-data "logo.ico;." --hidden-import pythoncom --hidden-import win32com --collect-data tkinterdnd2 --collect-data customtkinter main.py
+
+      # 校验产物存在
+      - name: Verify artifact
+        run: |
+          if (!(Test-Path "dist/2icon.exe")) { Write-Error "dist/2icon.exe not found"; exit 1 }
+          Get-Item "dist/2icon.exe" | Select-Object Name, Length
+
+      # 上传构建产物（任意触发均上传，便于下载调试）
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2icon-windows-x64
+          path: dist/2icon.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      # 仅当发布 Release 时，将单文件 exe 附加到 Release 资源
+      - name: Attach EXE to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/2icon.exe

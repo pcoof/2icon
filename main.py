@@ -277,8 +277,11 @@ class ImageToIcoConverter(TkinterDnD.Tk):
         default_size_btn.pack(side="right", padx=5)
         
         # 保存按钮（先pack，固定在底部，然后再pack内容区域填充剩余空间）
+        # 按钮行（保存 + 复制），固定在底部
+        button_row = ctk.CTkFrame(right_frame, fg_color="transparent")
+        button_row.pack(side="bottom", pady=10, padx=15, fill="x")
         self.save_button = ctk.CTkButton(
-            right_frame,
+            button_row,
             text="保存图标",
             command=self.save_icon,
             height=45,
@@ -288,7 +291,19 @@ class ImageToIcoConverter(TkinterDnD.Tk):
             text_color="white",
             corner_radius=8,
         )
-        self.save_button.pack(side="bottom", pady=10, padx=15, fill="x")
+        self.save_button.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.copy_button = ctk.CTkButton(
+            button_row,
+            text="复制",
+            command=self.copy_icon,
+            height=45,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color=("#2563eb", "#1d4ed8"),
+            hover_color=("#1e40af", "#1e3a8a"),
+            text_color="white",
+            corner_radius=8,
+        )
+        self.copy_button.pack(side="right", fill="x", expand=True, padx=(5, 0))
         
         # 创建一个容器框架来容纳预览区域和输出格式选择（填充保存按钮上方的剩余空间）
         right_content_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
@@ -321,7 +336,28 @@ class ImageToIcoConverter(TkinterDnD.Tk):
             )
             btn.pack(side="left", anchor="center", expand=True, padx=5, pady=2)
             self.format_buttons.append(btn)
-        
+
+        # 压缩比例滑块（位于输出格式区域底部）
+        quality_header = ctk.CTkFrame(format_frame_container, fg_color="transparent")
+        quality_header.pack(fill="x", padx=5, pady=(4, 0))
+        ctk.CTkLabel(
+            quality_header, text="压缩质量", font=ctk.CTkFont(size=12)
+        ).pack(side="left", padx=5)
+        self.quality_label = ctk.CTkLabel(
+            quality_header, text="95%", font=ctk.CTkFont(size=12), width=45
+        )
+        self.quality_label.pack(side="right", padx=5)
+        self.quality_var = ctk.DoubleVar(value=95)
+        self.compress_slider = ctk.CTkSlider(
+            format_frame_container,
+            from_=10,
+            to=100,
+            number_of_steps=90,
+            variable=self.quality_var,
+            command=self._update_quality_label,
+        )
+        self.compress_slider.pack(fill="x", padx=15, pady=(2, 8))
+
         # 图标信息显示
         self.info_label = ctk.CTkLabel( right_content_frame, text="", font=ctk.CTkFont(size=10), text_color="gray" )
         self.info_label.pack(pady=(2, 0))
@@ -1261,7 +1297,11 @@ class ImageToIcoConverter(TkinterDnD.Tk):
     def on_format_change(self):
         """当输出格式改变时更新预览和输出文件扩展名"""
         self.update_preview()
-    
+
+    def _update_quality_label(self, value):
+        """压缩滑块拖动时更新百分比显示"""
+        self.quality_label.configure(text=f"{int(float(value))}%")
+
     def update_output_extension(self):
         """根据选择的格式更新输出文件扩展名"""
         # 获取当前输出路径
@@ -1346,9 +1386,10 @@ class ImageToIcoConverter(TkinterDnD.Tk):
                 )
                     
             elif fmt == "PNG":
-                img.save(output_file, format="PNG")
+                img.save(output_file, format="PNG", optimize=True)
             elif fmt == "WEBP":
-                img.save(output_file, format="WEBP")
+                quality = int(self.quality_var.get())
+                img.save(output_file, format="WEBP", quality=quality)
             self.after(0, lambda: self.progress_bar.set(1.0))
             self.status.set(f"保存完成: {output_file}")
             messagebox.showinfo("成功", f"图标已成功保存到:\n{output_file}")
@@ -1358,6 +1399,57 @@ class ImageToIcoConverter(TkinterDnD.Tk):
         finally:
             # 隐藏进度条
             self.after(1000, lambda: self.progress_bar.pack_forget())
+
+    def _render_selected_image(self):
+        """按当前选中的图标与尺寸渲染出待保存/复制的图像"""
+        icon_index = self.selected_icon_index.get()
+        target_w = int(self.selected_width.get())
+        target_h = int(self.selected_height.get())
+        target_w = min(max(16, target_w), 1024)
+        target_h = min(max(16, target_h), 1024)
+        fmt = self.selected_format.get().upper()
+        if fmt == "ICO" and target_w != target_h:
+            square = max(target_w, target_h)
+            target_w = target_h = square
+        img = self.icon_list[icon_index]
+        img = img.resize((target_w, target_h), Image.LANCZOS).convert("RGBA")
+        return img, fmt
+
+    def copy_icon(self):
+        """将当前选中的图标复制到剪贴板"""
+        if not self.icon_list or not self.icon_buttons:
+            messagebox.showerror("错误", "没有可复制的图标")
+            return
+        try:
+            img, fmt = self._render_selected_image()
+            if HAS_WIN32:
+                import win32clipboard
+                from io import BytesIO
+                # 转换为DIB（去掉BMP文件头）后写入剪贴板，可直接粘贴到画图等程序
+                buf = BytesIO()
+                img.convert("RGB").save(buf, "BMP")
+                dib = buf.getvalue()[14:]
+                win32clipboard.OpenClipboard()
+                try:
+                    win32clipboard.EmptyClipboard()
+                    win32clipboard.SetClipboardData(win32clipboard.CF_DIB, dib)
+                finally:
+                    win32clipboard.CloseClipboard()
+                self.status.set("已复制图像到剪贴板")
+                messagebox.showinfo("成功", "图标图像已复制到剪贴板，可粘贴到画图等程序")
+            else:
+                # 非Windows环境回退：复制PNG的base64数据
+                import base64
+                from io import BytesIO
+                buf = BytesIO()
+                img.save(buf, "PNG")
+                b64 = base64.b64encode(buf.getvalue()).decode()
+                self.clipboard_clear()
+                self.clipboard_append(b64)
+                self.status.set("已复制图像数据(base64)到剪贴板")
+                messagebox.showinfo("成功", "已将图标PNG的base64数据复制到剪贴板")
+        except Exception as e:
+            messagebox.showerror("错误", f"复制失败:\n{str(e)}")
 
     # 去除ICO手写备选实现所需的BMP工具函数
 
